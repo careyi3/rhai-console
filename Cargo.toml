@@ -1,0 +1,21 @@
+[package]
+name = "rhai-console"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+description = "Operational REPL and script runner for embedding Rhai in Rust applications"
+homepage = "https://github.com/careyi3/rhai-console"
+repository = "https://github.com/careyi3/rhai-console"
+readme = "README.md"
+keywords = ["rhai", "repl", "scripting", "console", "shell"]
+categories = ["command-line-interface", "development-tools"]
+
+[dependencies]
+rhai = { version = "1.19", features = ["sync", "serde", "metadata"] }
+rustyline = "14"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"

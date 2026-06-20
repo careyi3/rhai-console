@@ -3,6 +3,8 @@ use std::fmt::Display;
 use rhai::{Dynamic, EvalAltResult, Position};
 use serde::Serialize;
 
+/// Convert a `Result<T, E>` into a Rhai call result: `Ok` is serialized to a [`Dynamic`] via
+/// serde, `Err` becomes a runtime error at `pos`. Used by [`reg!`](crate::reg).
 pub fn wrap_result<T, E>(r: Result<T, E>, pos: Position) -> Result<Dynamic, Box<EvalAltResult>>
 where
     T: Serialize,
@@ -14,10 +16,20 @@ where
     }
 }
 
+/// Build a Rhai runtime error carrying `msg` at source position `pos`.
 pub fn runtime_err(pos: Position, msg: impl Into<String>) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(msg.into().into(), pos))
 }
 
+/// Register a function on a module, wrapping the call with source-position capture, error
+/// mapping, and serde conversion of the result into a Rhai value.
+///
+/// The first closure parameter binds your state; the rest are the Rhai arguments. The body
+/// returns a `Result<T, E>` where `T: Serialize` and `E: Display`; `?` is supported.
+///
+/// ```ignore
+/// reg!(m, svc, "find", |s, id: i64| s.products().find(id));
+/// ```
 #[macro_export]
 macro_rules! reg {
     ($m:expr, $svc:expr, $name:expr, |$s:ident $(, $a:ident: $t:ty)* $(,)?| $body:expr) => {{

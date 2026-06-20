@@ -3,26 +3,54 @@ use std::path::Path;
 
 use rhai::{EvalAltResult, Position};
 
+use crate::color::Style;
+
+/// Print a script error, with its traceback, to stderr.
 pub fn script_error(err: &EvalAltResult, source: &str, path: &Path) {
     eprintln!("{}", format_script_error(err, source, path));
 }
 
+/// Print a REPL error, with its traceback, to stderr.
 pub fn repl_error(err: &EvalAltResult, source: &str) {
     eprintln!("{}", format_repl_error(err, source));
 }
 
+/// Format a script error and its traceback against `source`, naming `path`.
 pub fn format_script_error(err: &EvalAltResult, source: &str, path: &Path) -> String {
-    let mut out = format!("error in {}: {}", path.display(), leaf_message(err));
-    if let Some(tb) = format_traceback(err, source, true) {
+    format_script_error_styled(err, source, path, Style::none())
+}
+
+/// Format a REPL error and its traceback against `source`.
+pub fn format_repl_error(err: &EvalAltResult, source: &str) -> String {
+    format_repl_error_styled(err, source, Style::none())
+}
+
+pub(crate) fn script_error_styled(err: &EvalAltResult, source: &str, path: &Path, style: Style) {
+    eprintln!("{}", format_script_error_styled(err, source, path, style));
+}
+
+pub(crate) fn repl_error_styled(err: &EvalAltResult, source: &str, style: Style) {
+    eprintln!("{}", format_repl_error_styled(err, source, style));
+}
+
+pub(crate) fn format_script_error_styled(
+    err: &EvalAltResult,
+    source: &str,
+    path: &Path,
+    style: Style,
+) -> String {
+    let header = style.error(&format!("error in {}", path.display()));
+    let mut out = format!("{}: {}", header, leaf_message(err));
+    if let Some(tb) = format_traceback(err, source, true, style) {
         out.push('\n');
         out.push_str(&tb);
     }
     out
 }
 
-pub fn format_repl_error(err: &EvalAltResult, source: &str) -> String {
-    let mut out = format!("error: {}", leaf_message(err));
-    if let Some(tb) = format_traceback(err, source, false) {
+pub(crate) fn format_repl_error_styled(err: &EvalAltResult, source: &str, style: Style) -> String {
+    let mut out = format!("{}: {}", style.error("error"), leaf_message(err));
+    if let Some(tb) = format_traceback(err, source, false, style) {
         out.push('\n');
         out.push_str(&tb);
     }
@@ -64,7 +92,12 @@ fn leaf_message(err: &EvalAltResult) -> String {
     }
 }
 
-fn format_traceback(err: &EvalAltResult, source: &str, always: bool) -> Option<String> {
+fn format_traceback(
+    err: &EvalAltResult,
+    source: &str,
+    always: bool,
+    style: Style,
+) -> Option<String> {
     let (mut frames, leaf) = collect_frames(err);
     let leaf_pos = leaf.position();
     frames.push(Frame {
@@ -80,28 +113,29 @@ fn format_traceback(err: &EvalAltResult, source: &str, always: bool) -> Option<S
         return None;
     }
 
-    let mut out = String::from("traceback (innermost last):\n");
-    for (i, frame) in frames.iter().rev().enumerate() {
+    let mut out = format!("{}\n", style.dim("traceback (innermost last):"));
+    for frame in frames.iter().rev() {
         let loc = match (frame.position.line(), frame.position.position()) {
             (Some(l), Some(c)) => format!("line {l}:{c}"),
             (Some(l), None) => format!("line {l}"),
             _ => "unknown".into(),
         };
-        writeln!(out, "  in {} at {}", frame.label, loc).ok();
+        writeln!(
+            out,
+            "{}",
+            style.dim(&format!("  in {} at {}", frame.label, loc))
+        )
+        .ok();
         if let Some(l) = frame.position.line() {
             if let Some(src_line) = source.lines().nth(l.saturating_sub(1)) {
                 writeln!(out, "    | {}", src_line.trim_end()).ok();
                 if let Some(c) = frame.position.position() {
                     if c > 0 {
-                        writeln!(out, "    | {}^", " ".repeat(c - 1)).ok();
+                        writeln!(out, "    | {}{}", " ".repeat(c - 1), style.caret("^")).ok();
                     }
                 }
             }
         }
-        if i + 1 < frames.len() {
-            // no separator between frames
-        }
     }
     Some(out.trim_end().to_string())
 }
-

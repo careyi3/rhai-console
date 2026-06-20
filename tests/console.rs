@@ -27,11 +27,20 @@ fn builder_chain_compiles_and_runs() {
 }
 
 #[test]
+fn color_choice_builder_runs_a_script() {
+    let mut file = tempfile::Builder::new().suffix(".rhai").tempfile().unwrap();
+    writeln!(file, "1 + 2").unwrap();
+    let path = file.path().to_string_lossy().into_owned();
+
+    let r = Console::new(())
+        .color(ColorChoice::Never)
+        .run_with_args(vec![path]);
+    assert!(r.is_ok());
+}
+
+#[test]
 fn runs_script_file_happy_path() {
-    let mut file = tempfile::Builder::new()
-        .suffix(".rhai")
-        .tempfile()
-        .unwrap();
+    let mut file = tempfile::Builder::new().suffix(".rhai").tempfile().unwrap();
     writeln!(file, "1 + 2").unwrap();
     let path = file.path().to_string_lossy().into_owned();
 
@@ -41,10 +50,7 @@ fn runs_script_file_happy_path() {
 
 #[test]
 fn script_can_access_registered_module() {
-    let mut file = tempfile::Builder::new()
-        .suffix(".rhai")
-        .tempfile()
-        .unwrap();
+    let mut file = tempfile::Builder::new().suffix(".rhai").tempfile().unwrap();
     writeln!(file, "math::double(21)").unwrap();
     let path = file.path().to_string_lossy().into_owned();
 
@@ -58,10 +64,7 @@ fn script_can_access_registered_module() {
 
 #[test]
 fn script_receives_positional_args() {
-    let mut file = tempfile::Builder::new()
-        .suffix(".rhai")
-        .tempfile()
-        .unwrap();
+    let mut file = tempfile::Builder::new().suffix(".rhai").tempfile().unwrap();
     writeln!(file, "assert::ok(args.len == 2);").unwrap();
     writeln!(file, "assert::ok(args[0] == \"alpha\");").unwrap();
     writeln!(file, "assert::ok(args[1] == \"beta\");").unwrap();

@@ -2,15 +2,23 @@ use std::fmt::Write;
 
 use rhai::{Engine, Module};
 
+use crate::color::{ColorChoice, Stream, Style};
 use crate::directives;
 
 pub(crate) type ModuleBuilder<S> = Box<dyn FnOnce(&mut Module, S) + Send>;
+
+#[derive(Default)]
+pub(crate) struct Completions {
+    pub modules: Vec<(&'static str, Vec<String>)>,
+    pub globals: Vec<String>,
+}
 
 pub(crate) fn build<S>(
     state: S,
     builders: Vec<(&'static str, ModuleBuilder<S>)>,
     intro: Option<&str>,
-) -> (Engine, String)
+    color: ColorChoice,
+) -> (Engine, String, Completions)
 where
     S: Clone + Send + Sync + 'static,
 {
@@ -26,7 +34,15 @@ where
         modules.push((name, m));
     }
 
-    let help = build_help(&modules, intro);
+    let help = build_help(&modules, intro, color.style_for(Stream::Stdout));
+
+    let completions = Completions {
+        modules: modules
+            .iter()
+            .map(|(ns, m)| (*ns, module_signatures(m)))
+            .collect(),
+        globals: vec!["help()".to_string()],
+    };
 
     for (name, module) in modules {
         engine.register_static_module(name, module.into());
@@ -35,23 +51,40 @@ where
     let help_for_fn = help.clone();
     engine.register_fn("help", move || println!("{help_for_fn}"));
 
-    (engine, help)
+    (engine, help, completions)
 }
 
-fn format_directives_block() -> String {
+fn module_signatures(module: &Module) -> Vec<String> {
+    let mut sigs: Vec<String> = module
+        .gen_fn_signatures_with_mapper(|t| t.into())
+        .map(|sig| prettify(&sig))
+        .collect();
+    sigs.sort();
+    sigs
+}
+
+fn format_directives_block(style: Style) -> String {
     let width = directives::ALL
         .iter()
         .map(|d| d.name.len())
         .max()
         .unwrap_or(0);
-    let mut out = String::from("REPL directives:\n");
+    let mut out = format!("{}\n", style.heading("REPL directives:"));
     for d in directives::ALL {
-        writeln!(out, "  :{:width$}  {}", d.name, d.description, width = width).ok();
+        let pad = " ".repeat(width.saturating_sub(d.name.len()));
+        writeln!(
+            out,
+            "  {}{}  {}",
+            style.ident(&format!(":{}", d.name)),
+            pad,
+            d.description
+        )
+        .ok();
     }
     out
 }
 
-fn build_help(modules: &[(&'static str, Module)], intro: Option<&str>) -> String {
+fn build_help(modules: &[(&'static str, Module)], intro: Option<&str>, style: Style) -> String {
     let mut out = String::new();
     if let Some(s) = intro {
         out.push_str(s);
@@ -60,23 +93,19 @@ fn build_help(modules: &[(&'static str, Module)], intro: Option<&str>) -> String
         }
         out.push('\n');
     }
-    out.push_str(&format_directives_block());
-    out.push_str("\nAvailable modules:\n");
+    out.push_str(&format_directives_block(style));
+    writeln!(out, "\n{}", style.heading("Available modules:")).ok();
     let mut first = true;
     for (ns, module) in modules {
-        let mut sigs: Vec<String> = module
-            .gen_fn_signatures_with_mapper(|t| t.into())
-            .map(|sig| prettify(&sig))
-            .collect();
+        let sigs = module_signatures(module);
         if sigs.is_empty() {
             continue;
         }
-        sigs.sort();
         if !first {
             out.push('\n');
         }
         for sig in sigs {
-            writeln!(out, "  {ns}::{sig}").ok();
+            writeln!(out, "  {}", style.signature(&format!("{ns}::{sig}"))).ok();
         }
         first = false;
     }
@@ -117,7 +146,7 @@ mod tests {
 
     #[test]
     fn directives_block_starts_with_header_and_lists_each_directive() {
-        let out = format_directives_block();
+        let out = format_directives_block(Style::none());
         assert!(out.starts_with("REPL directives:\n"));
         assert!(out.contains(":help"));
         assert!(out.contains(":quit"));
@@ -127,7 +156,7 @@ mod tests {
 
     #[test]
     fn directives_block_aligns_description_columns() {
-        let out = format_directives_block();
+        let out = format_directives_block(Style::none());
         let help_line = out.lines().find(|l| l.contains(":help")).unwrap();
         let quit_line = out.lines().find(|l| l.contains(":quit")).unwrap();
         let help_desc_col = help_line.find("show").unwrap();
@@ -137,7 +166,7 @@ mod tests {
 
     #[test]
     fn build_help_includes_intro_when_provided() {
-        let help = build_help(&[], Some("MY-APP intro"));
+        let help = build_help(&[], Some("MY-APP intro"), Style::none());
         assert!(help.contains("MY-APP intro"));
         assert!(help.contains("REPL directives:"));
         assert!(help.contains("Available modules:"));
@@ -145,7 +174,7 @@ mod tests {
 
     #[test]
     fn build_help_omits_intro_when_not_provided() {
-        let help = build_help(&[], None);
+        let help = build_help(&[], None, Style::none());
         assert!(help.starts_with("REPL directives:"));
     }
 
@@ -158,7 +187,7 @@ mod tests {
                 Ok(42)
             });
         let modules = vec![("ns", m)];
-        let help = build_help(&modules, None);
+        let help = build_help(&modules, None, Style::none());
         assert!(help.contains("ns::answer"), "got: {help}");
     }
 
@@ -175,9 +204,46 @@ mod tests {
             }),
         )];
 
-        let (engine, help) = build(7_i64, builders, None);
+        let (engine, help, completions) = build(7_i64, builders, None, ColorChoice::Never);
         let result: i64 = engine.eval("demo::get()").unwrap();
         assert_eq!(result, 7);
         assert!(help.contains("demo::get"));
+        let (ns, sigs) = &completions.modules[0];
+        assert_eq!(*ns, "demo");
+        assert_eq!(sigs.len(), 1);
+        assert!(sigs[0].starts_with("get("), "got: {sigs:?}");
+        assert!(completions.globals.contains(&"help()".to_string()));
+    }
+
+    #[test]
+    fn module_signatures_are_sorted_and_keep_overloads() {
+        let mut m = Module::new();
+        rhai::FuncRegistration::new("list")
+            .with_params_info(["i64"])
+            .set_into_module(&mut m, || -> Result<i64, Box<rhai::EvalAltResult>> {
+                Ok(0)
+            });
+        rhai::FuncRegistration::new("get")
+            .with_params_info(["i64", "i64"])
+            .set_into_module(&mut m, |_: i64| -> Result<i64, Box<rhai::EvalAltResult>> {
+                Ok(0)
+            });
+        rhai::FuncRegistration::new("get")
+            .with_params_info(["rhai::ImmutableString", "i64"])
+            .set_into_module(
+                &mut m,
+                |_: rhai::ImmutableString| -> Result<i64, Box<rhai::EvalAltResult>> { Ok(0) },
+            );
+
+        let sigs = module_signatures(&m);
+        assert_eq!(sigs.len(), 3, "got: {sigs:?}");
+        let mut sorted = sigs.clone();
+        sorted.sort();
+        assert_eq!(sigs, sorted);
+        assert!(
+            sigs.iter().any(|s| s.contains("ImmutableString")),
+            "got: {sigs:?}"
+        );
+        assert!(!sigs.iter().any(|s| s.contains("rhai::")), "got: {sigs:?}");
     }
 }

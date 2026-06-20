@@ -36,7 +36,9 @@ fn reg_multi_arg_function_returns_value() {
     let mut m = Module::new();
     let state = ();
 
-    reg!(&mut m, state, "add", |_s, a: i64, b: i64| Ok::<_, String>(a + b));
+    reg!(&mut m, state, "add", |_s, a: i64, b: i64| Ok::<_, String>(
+        a + b
+    ));
 
     let mut engine = Engine::new();
     engine.register_static_module("math", m.into());
@@ -50,12 +52,9 @@ fn reg_propagates_domain_error_with_call_position() {
     let mut m = Module::new();
     let state = ();
 
-    reg!(
-        &mut m,
-        state,
-        "boom",
-        |_s| Err::<i64, _>("validation: bad input".to_string())
-    );
+    reg!(&mut m, state, "boom", |_s| Err::<i64, _>(
+        "validation: bad input".to_string()
+    ));
 
     let mut engine = Engine::new();
     engine.register_static_module("t", m.into());
@@ -100,12 +99,12 @@ fn reg_attaches_param_metadata() {
     let mut m = Module::new();
     let state = ();
 
-    reg!(
-        &mut m,
-        state,
-        "find",
-        |_s, sku: ImmutableString| Ok::<_, String>(sku.len() as i64)
-    );
+    reg!(&mut m, state, "find", |_s, sku: ImmutableString| Ok::<
+        _,
+        String,
+    >(
+        sku.len() as i64
+    ));
 
     let sigs: Vec<String> = m.gen_fn_signatures_with_mapper(|t| t.into()).collect();
     let sig = sigs

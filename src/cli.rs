@@ -2,12 +2,15 @@ use std::path::Path;
 
 use rhai::Engine;
 
-use crate::{repl, script, Result};
+use crate::engine::Completions;
+use crate::{repl, script, ColorChoice, Result};
 
 pub(crate) fn dispatch(
     engine: &Engine,
     intro: Option<&str>,
     help: &str,
+    completions: &Completions,
+    color: ColorChoice,
     args: Vec<String>,
 ) -> Result<()> {
     if matches!(args.first().map(String::as_str), Some("-h" | "--help")) {
@@ -16,8 +19,8 @@ pub(crate) fn dispatch(
     }
 
     match args.split_first() {
-        None => repl::run(engine, intro, help),
-        Some((path, script_args)) => script::run(engine, Path::new(path), script_args),
+        None => repl::run(engine, intro, help, completions, color),
+        Some((path, script_args)) => script::run(engine, Path::new(path), script_args, color),
     }
 }
 

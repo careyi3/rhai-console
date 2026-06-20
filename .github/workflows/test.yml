@@ -1,4 +1,4 @@
-name: Run tests
+name: CI
 
 on:
   push:
@@ -20,6 +20,7 @@ jobs:
           toolchain: stable
           profile: minimal
           override: true
+          components: rustfmt, clippy
 
       - name: Cache cargo registry
         uses: actions/cache@v3
@@ -37,5 +38,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-target-
 
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --all-targets -- -D warnings
+
       - name: Run tests
         run: cargo test
+
+      - name: Build docs
+        run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings

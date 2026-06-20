@@ -1,6 +1,6 @@
 [package]
 name = "rhai-console"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 license = "MIT"
 description = "Operational REPL and script runner for embedding Rhai in Rust applications"
